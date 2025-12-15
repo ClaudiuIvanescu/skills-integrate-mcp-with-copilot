@@ -4,6 +4,94 @@ document.addEventListener("DOMContentLoaded", () => {
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
 
+  // Authentication state
+  let currentUser = null;
+  let teacherCredentials = null;
+
+  // Login Modal Elements
+  const loginModal = document.getElementById("login-modal");
+  const loginBtn = document.getElementById("login-btn");
+  const closeBtn = document.querySelector(".close-button");
+  const loginForm = document.getElementById("login-form");
+  const loginMessage = document.getElementById("login-message");
+
+  // Login modal event listeners
+  loginBtn.addEventListener("click", () => {
+    loginModal.style.display = "block";
+    loginMessage.textContent = "";
+    loginMessage.className = "";
+  });
+
+  closeBtn.addEventListener("click", () => {
+    loginModal.style.display = "none";
+  });
+
+  window.addEventListener("click", (event) => {
+    if (event.target === loginModal) {
+      loginModal.style.display = "none";
+    }
+  });
+
+  // Handle login form submission
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+
+    try {
+      const response = await fetch("/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        currentUser = username;
+        teacherCredentials = { username, password };
+
+        // Update UI to show logged-in state
+        loginBtn.textContent = `${username} (Logout)`;
+        loginBtn.classList.add("logged-in");
+        loginModal.style.display = "none";
+        loginForm.reset();
+
+        loginMessage.textContent = `Logged in as ${username}`;
+        loginMessage.className = "success";
+
+        // Show logout option by clicking again
+        loginBtn.addEventListener("click", handleLogout);
+      } else {
+        loginMessage.textContent = result.detail || "Login failed";
+        loginMessage.className = "error";
+      }
+    } catch (error) {
+      loginMessage.textContent = "Failed to login. Please try again.";
+      loginMessage.className = "error";
+      console.error("Error logging in:", error);
+    }
+  });
+
+  function handleLogout() {
+    currentUser = null;
+    teacherCredentials = null;
+    loginBtn.textContent = "Login";
+    loginBtn.classList.remove("logged-in");
+    messageDiv.textContent = "Logged out successfully";
+    messageDiv.className = "success";
+    messageDiv.classList.remove("hidden");
+
+    setTimeout(() => {
+      messageDiv.classList.add("hidden");
+    }, 5000);
+
+    fetchActivities();
+  }
+
   // Function to fetch activities from API
   async function fetchActivities() {
     try {
@@ -73,11 +161,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const activity = button.getAttribute("data-activity");
     const email = button.getAttribute("data-email");
 
+    if (!teacherCredentials) {
+      messageDiv.textContent = "You must be logged in as a teacher to unregister students";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      setTimeout(() => {
+        messageDiv.classList.add("hidden");
+      }, 5000);
+      return;
+    }
+
     try {
       const response = await fetch(
         `/activities/${encodeURIComponent(
           activity
-        )}/unregister?email=${encodeURIComponent(email)}`,
+        )}/unregister?email=${encodeURIComponent(email)}&username=${encodeURIComponent(teacherCredentials.username)}&password=${encodeURIComponent(teacherCredentials.password)}`,
         {
           method: "DELETE",
         }
@@ -117,11 +215,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const email = document.getElementById("email").value;
     const activity = document.getElementById("activity").value;
 
+    if (!teacherCredentials) {
+      messageDiv.textContent = "You must be logged in as a teacher to sign up students";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      setTimeout(() => {
+        messageDiv.classList.add("hidden");
+      }, 5000);
+      return;
+    }
+
     try {
       const response = await fetch(
         `/activities/${encodeURIComponent(
           activity
-        )}/signup?email=${encodeURIComponent(email)}`,
+        )}/signup?email=${encodeURIComponent(email)}&username=${encodeURIComponent(teacherCredentials.username)}&password=${encodeURIComponent(teacherCredentials.password)}`,
         {
           method: "POST",
         }

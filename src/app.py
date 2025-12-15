@@ -5,10 +5,11 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
+import json
 from pathlib import Path
 
 app = FastAPI(title="Mergington High School API",
@@ -18,6 +19,22 @@ app = FastAPI(title="Mergington High School API",
 current_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
+
+# Load teacher credentials
+def load_teachers():
+    """Load teacher credentials from JSON file"""
+    teachers_file = Path(__file__).parent.parent / "teachers.json"
+    if teachers_file.exists():
+        with open(teachers_file, 'r') as f:
+            data = json.load(f)
+            return {t['username']: t['password'] for t in data['teachers']}
+    return {}
+
+teachers_db = load_teachers()
+
+def authenticate_teacher(username: str, password: str) -> bool:
+    """Verify teacher credentials"""
+    return username in teachers_db and teachers_db[username] == password
 
 # In-memory activity database
 activities = {
@@ -88,9 +105,25 @@ def get_activities():
     return activities
 
 
+@app.post("/auth/login")
+def teacher_login(username: str = Query(...), password: str = Query(...)):
+    """Authenticate a teacher"""
+    if authenticate_teacher(username, password):
+        return {"status": "authenticated", "role": "teacher", "message": "Login successful"}
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
-    """Sign up a student for an activity"""
+def signup_for_activity(activity_name: str, email: str, username: str = Query(None), password: str = Query(None)):
+    """Register a student for an activity - only teachers can perform this action"""
+    # If username and password provided, verify teacher credentials
+    if username and password:
+        if not authenticate_teacher(username, password):
+            raise HTTPException(status_code=401, detail="Invalid teacher credentials")
+    else:
+        # If no credentials provided, this is a public signup (reject it - students cannot self-signup)
+        raise HTTPException(status_code=403, detail="Only teachers can register students. Please log in.")
+    
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
@@ -107,12 +140,20 @@ def signup_for_activity(activity_name: str, email: str):
 
     # Add student
     activity["participants"].append(email)
-    return {"message": f"Signed up {email} for {activity_name}"}
+    return {"message": f"Teacher {username} registered {email} for {activity_name}"}
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
-    """Unregister a student from an activity"""
+def unregister_from_activity(activity_name: str, email: str, username: str = Query(None), password: str = Query(None)):
+    """Unregister a student from an activity - only teachers can perform this action"""
+    # If username and password provided, verify teacher credentials
+    if username and password:
+        if not authenticate_teacher(username, password):
+            raise HTTPException(status_code=401, detail="Invalid teacher credentials")
+    else:
+        # If no credentials provided, reject the request
+        raise HTTPException(status_code=403, detail="Only teachers can unregister students. Please log in.")
+    
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
@@ -129,4 +170,4 @@ def unregister_from_activity(activity_name: str, email: str):
 
     # Remove student
     activity["participants"].remove(email)
-    return {"message": f"Unregistered {email} from {activity_name}"}
+    return {"message": f"Teacher {username} unregistered {email} from {activity_name}"}
